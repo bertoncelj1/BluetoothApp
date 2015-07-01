@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="?android:attr/listPreferredItemHeight"
+    android:padding="6dip">
+
+
+    <TextView
+        android:id= "@+id/tvMessage"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:text="Tuki poj pride besedilo kot obvestilo to je zelo dolgo besedilo ki je predolgo za ta okvircek"
+        android:layout_marginLeft="20dp"
+        android:layout_marginRight="20dp"
+        android:gravity="center|top"
+        android:layout_marginTop="7dp" />
+</LinearLayout>

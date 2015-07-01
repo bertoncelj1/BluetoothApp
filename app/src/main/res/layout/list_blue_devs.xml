@@ -1,0 +1,55 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="fill_parent"
+    android:layout_height="?android:attr/listPreferredItemHeight"
+    android:padding="6dip">
+
+    <View
+        android:id="@+id/mark"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:background="@android:color/holo_green_light"
+        android:visibility="visible"
+        android:layout_marginRight="6dp"
+        android:layout_centerVertical="true"
+        android:layout_alignParentLeft="true"
+        android:layout_alignParentStart="true" />
+
+    <TextView
+        android:id="@+id/tvSecondLine"
+        android:layout_width="fill_parent"
+        android:layout_height="24dip"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentRight="true"
+        android:ellipsize="marquee"
+        android:singleLine="true"
+        android:text="Description"
+        android:textSize="12sp"
+        android:layout_toRightOf="@+id/mark"
+        android:layout_toEndOf="@+id/mark"
+        android:layout_marginLeft="3dp" />
+
+    <TextView
+        android:id="@+id/tvFirstLine"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/tvSecondLine"
+        android:layout_alignParentTop="true"
+        android:layout_alignWithParentIfMissing="true"
+        android:gravity="center_vertical"
+        android:text="Example application"
+        android:textSize="16sp"
+        android:layout_toRightOf="@+id/mark"
+        android:layout_toEndOf="@+id/mark" />
+
+    <ProgressBar
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/pbConnecting"
+        android:layout_centerVertical="true"
+        android:layout_alignParentRight="true"
+        android:layout_alignParentEnd="true"
+        android:visibility="gone"/>
+
+
+</RelativeLayout> 
