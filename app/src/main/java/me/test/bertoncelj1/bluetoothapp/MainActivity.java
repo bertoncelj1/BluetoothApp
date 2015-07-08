@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Message;
 import android.support.v7.app.ActionBarActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -17,7 +18,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 
-public class MainActivity extends ActionBarActivity implements View.OnClickListener, AdapterView.OnItemClickListener, BluetoothMngr.connectionCallback {
+public class MainActivity extends ActionBarActivity implements View.OnClickListener, AdapterView.OnItemClickListener, BluetoothMngr.ConnectionCallback {
 
     private ListView lvSeznam;
     private TextView tvNapis;
@@ -39,7 +40,7 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
     Section sectionPaired;
     Section sectionAvailable;
 
-    private final int type = 1;
+    private final int type = 0;
 
     //če je registriran register za callback funcije ki išče bluetooth naprave
     //to je potrebno ker na ondestroy moramo zapreti reciver in moramo vedeti ali
@@ -97,7 +98,7 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
             // Device does not support Bluetooth
             izpisiInfo("Bluetooth not supported");
             setState(States.NOT_SUPPORTED);
-            bEnableBlue.setVisibility(View.GONE);
+
             return false;
         }else{
             izpisiInfo("Bluetooth supported");
@@ -130,8 +131,19 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
     @Override
     public void alertConnected() {
         Log.d(DEBUG_TAG, "alertConnected");
+        adapterDevices.oneIsConnecting(false, -1);
+        adapterDevices.getItem(positionConnecting).connecting = false;
         Toast.makeText(this, "Connection OK, oppening new Activity!", Toast.LENGTH_SHORT).show();
         adapterDevices.oneIsConnecting(false, -1);
+
+
+        //osvezi list z paired napravami
+        sectionPaired.setDeviceList(mBluetoothAdapter.getBondedDevices());
+
+        //poklicce nov activity
+        Intent mIntent = new Intent(this, MessageActiviy.class);
+        mIntent.putExtra("blueMng", new BluetoothMngrParcelable(bluetoothMngr));
+        startActivity(mIntent);
     }
 
     @Override
@@ -181,8 +193,10 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
                 break;
 
             case NOT_SUPPORTED:
-                tvNapis.setText("Bluetooth not supported");
+                tvNapis.setText("We are sorry, but your device doesn't support bluetooth.");
                 bSearch.setEnabled(false);
+                bEnableBlue.setVisibility(View.GONE);
+                llBlueDevices.setVisibility(View.GONE);
                 break;
 
             case DISABLED:
@@ -235,6 +249,7 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         sectionAvailable.clearDeviceList();
         sectionAvailable.setLoading(true);
         sectionAvailable.setType(Types.EMPTY);
+        lvSeznam.setSelection(adapterDevices.getCount()-1); //scrolla na dno
     }
 
     void enableBluetooth(){
@@ -310,13 +325,14 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
                 }
 
                 if(!paired){
-                    sectionAvailable.addBluetoothDevice(device);
+                    mainThreadAddDevice(device);
                     sectionAvailable.setType(Types.DEVICES);
-                    lvSeznam.smoothScrollToPosition(adapterDevices.getCount()-1);
+                    mainThreadScrollToBottom();
                 }
             }
             else if(BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)){
                 izpisiInfo("search finished");
+                mainThreadScrollToBottom();
 
                 //naprava lahko prejme discovery finished takrat ko se začne povezovt
                 if(!bluetoothMngr.isConnecting()) setState(States.ENABLED);
@@ -337,6 +353,24 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         Log.d(DEBUG_TAG, info);
     }
 
+
+    void mainThreadScrollToBottom(){
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                lvSeznam.setSelection(adapterDevices.getCount() - 1);
+            }
+        });
+    }
+
+    void mainThreadAddDevice(final BluetoothDevice device){
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                sectionAvailable.addBluetoothDevice(device);
+            }
+        });
+    }
 
     @Override
     protected void onActivityResult (int requestCode, int resultCode, Intent data){
@@ -377,7 +411,7 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 
-        Log.d(DEBUG_TAG, "position:" + position + " itemName:" + adapterDevices.getItem(position).blueDev.getName());
+        //Log.d(DEBUG_TAG, "position:" + position + " itemName:" + adapterDevices.getItem(position).blueDev.getName());
 
 
         //pogleda če se kdo že povezuje

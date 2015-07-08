@@ -110,7 +110,7 @@ public class BluetoothArduino extends Thread {
 
     public void run(){
 
-        while (true) {
+        while (mBlueSocket != null) {
             if(connected) {
                 try {
                     byte ch, buffer[] = new byte[1024];
@@ -132,17 +132,17 @@ public class BluetoothArduino extends Thread {
                 }
             }
         }
+
+        connected = false;
     }
+
+
 
     private void MessageReceived(String msg){
         try {
 
             mMessages.add(msg);
-            try {
-                this.notify();
-            }catch (IllegalMonitorStateException e){
-                //
-            }
+            //TODO notify main class
         } catch (Exception e){
             LogError("->[#] Failed to receive message: " + e.getMessage());
         }

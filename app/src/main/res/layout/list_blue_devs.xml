@@ -36,10 +36,12 @@
         android:layout_alignParentTop="true"
         android:layout_alignWithParentIfMissing="true"
         android:gravity="center_vertical"
-        android:text="Example application"
+        android:text="To je zelo dolgo besedilo ki bo sigurno preseglo vse mozne meje"
         android:textSize="16sp"
         android:layout_toRightOf="@+id/mark"
-        android:layout_toEndOf="@+id/mark" />
+        android:layout_toEndOf="@+id/mark"
+        android:singleLine="true"
+        android:layout_marginRight="10dp" />
 
     <ProgressBar
         style="?android:attr/progressBarStyleLarge"

@@ -4,6 +4,8 @@ package me.test.bertoncelj1.bluetoothapp;
 import android.app.Activity;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.os.Parcel;
+import android.os.Parcelable;
 import android.util.Log;
 
 import java.io.IOException;
@@ -11,9 +13,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
-public class BluetoothMngr extends Thread {
+public class BluetoothMngr extends Thread implements BluetoothConnectorAsync.BluetConnAsyncCallback {
     private BluetoothDevice mBlueDevice = null;
     OutputStream mOut;
     InputStream mIn;
@@ -22,15 +23,16 @@ public class BluetoothMngr extends Thread {
     private List<String> mMessages = new ArrayList<>();
     private final String DEBUG_TAG = "infoBlue";
     private char DELIMITER = '\n';
-    ConnectThread connectThread;
+    BluetoothConnectorAsync blueConnector;
+    private BluetoothSocket blueSocket;
 
-    connectionCallback alertClass;
+    ConnectionCallback alertClass;
     Activity alertActivity;
 
 
     private static BluetoothMngr __blue = null;
 
-    public static BluetoothMngr getInstance(connectionCallback alertClass, Activity alertActivity){
+    public static BluetoothMngr getInstance(ConnectionCallback alertClass, Activity alertActivity){
         //if(bluDev == null && __blue == null) return null;
         return (__blue == null)? new BluetoothMngr(alertClass, alertActivity) : __blue;
     }
@@ -38,7 +40,7 @@ public class BluetoothMngr extends Thread {
     public boolean isConnecting(){return connecting;};
 
 
-    private BluetoothMngr(connectionCallback alertClass,Activity alertActivity){
+    private BluetoothMngr(ConnectionCallback alertClass,Activity alertActivity){
         this.alertActivity = alertActivity;
         this.alertClass = alertClass;
         __blue = this;
@@ -53,13 +55,12 @@ public class BluetoothMngr extends Thread {
     public void Connect(BluetoothDevice bluDev){
         mBlueDevice = bluDev;
         try{
-            LogMessage("\t\tConnecting to the device " + bluDev.getName() + " adress: " + bluDev.getAddress());
+            LogMessage("\t\tConnecting to the device " + bluDev.getName() + " address: " + bluDev.getAddress());
             alertClass.alertStart();
             connecting = true;
 
-            connectThread = new ConnectThread(mBlueDevice);
-            connectThread.start();
-
+            blueConnector = new BluetoothConnectorAsync(bluDev, true, null, this);
+            blueConnector.connect();
 
         }catch (Exception e) {
             LogError("\t\t[#]Error while connecting: " + e.getMessage());
@@ -67,89 +68,27 @@ public class BluetoothMngr extends Thread {
         }
     }
 
+    @Override
+    public void blueConnEvent(BluetoothConnectorAsync.BlueConnEvents event, BluetoothSocket socket, String message) {
+        if(event == BluetoothConnectorAsync.BlueConnEvents.CONNECTED){
+            manageConnectedSocket(socket);
+
+        }else if(event == BluetoothConnectorAsync.BlueConnEvents.ERROR){
+            alertErrorToMain();
+        }
+    }
+
     //prekiliče povezovanju.. ubistvu samo ignorira če se je že povezal in ne prikaže errorje
     public void stopConnecting(){
+        /*
         if(!connecting)return;
         connecting = false;
-        connectThread.cancel();
+        blueConnector.cancel();
         alertClass.alertCancelled();
+        */
+        //TODO
     }
 
-
-    private class ConnectThread extends Thread {
-        private final BluetoothSocket mmSocket;
-        private final BluetoothDevice mmDevice;
-
-        private final UUID MY_UUID = UUID.fromString("1ed81c30-1a89-11e5-b60b-1697f925ec7b");
-
-        public ConnectThread(BluetoothDevice device) {
-            // Use a temporary object that is later assigned to mmSocket,
-            // because mmSocket is final
-            BluetoothSocket tmp = null;
-            mmDevice = device;
-
-            // Get a BluetoothSocket to connect with the given BluetoothDevice
-            try {
-                // MY_UUID is the app's UUID string, also used by the server code
-                tmp = device.createRfcommSocketToServiceRecord(MY_UUID);
-            } catch (IOException e) {
-                connecting = false;
-                alertErrorToMain(e.getMessage());
-            }
-            mmSocket = tmp;
-        }
-
-        public void run() {
-            try {
-                Log.d(DEBUG_TAG, "connect start");
-
-                // Connect the device through the socket. This will block
-                // until it succeeds or throws an exception
-                mmSocket.connect();
-                Log.d(DEBUG_TAG, "connect over");
-
-                //če je uporabnik preklicou connecting
-                if(!connecting){
-                    mmSocket.close();
-                    return;
-                }
-            } catch (IOException connectException) {
-                // Unable to connect; close the socket and get out
-                try {
-                    Log.d(DEBUG_TAG, "connect connectException");
-                    if(!connecting)return;
-                    connecting = false;
-
-                    alertErrorToMain(connectException.getMessage());
-
-                    mmSocket.close();
-                } catch (IOException closeException) { }
-                return;
-            }
-
-            // Do work to manage the connection (in a separate thread)
-            manageConnectedSocket(mmSocket);
-        }
-
-        /** Will cancel an in-progress connection, and close the socket */
-        public void cancel() {
-            try {
-                mmSocket.close();
-                connecting = false;
-            } catch (IOException e) { }
-        }
-    }
-
-    //pošlej alert glavnemu threadu tako da ta lahko updejta view
-    private void alertErrorToMain(final String error){
-        alertActivity.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                alertClass.alertError(error);
-            }
-        });
-
-    }
 
     //pošlej alert glavnemu threadu tako da ta lahko updejta view
     private void alertConnectedToMain(){
@@ -159,12 +98,23 @@ public class BluetoothMngr extends Thread {
                 alertClass.alertConnected();
             }
         });
-
     }
+
+    //pošlej alert glavnemu threadu tako da ta lahko updejta view
+    private void alertErrorToMain(){
+        alertActivity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                alertClass.alertError("error");
+            }
+        });
+    }
+
 
     public void manageConnectedSocket(BluetoothSocket socket){
         try {
             connecting = false;
+            blueSocket = socket;
             mOut = socket.getOutputStream();
             mIn = socket.getInputStream();
             connected = true;
@@ -185,7 +135,9 @@ public class BluetoothMngr extends Thread {
         byte ch, buffer[] = new byte[1024];
         int i;
 
-        while (true) {
+        connected = true;
+
+        while (blueSocket.isConnected()) {
             if(connected) try {
 
                 i = 0;
@@ -203,6 +155,9 @@ public class BluetoothMngr extends Thread {
                 LogError("->[#]Failed to receive message: " + e.getMessage());
             }
         }
+
+        //TODO trigger callback
+        connected = false;
     }
 
     private void MessageReceived(String msg){
@@ -210,7 +165,7 @@ public class BluetoothMngr extends Thread {
 
             mMessages.add(msg);
                 this.notify();
-                //todo triger callback
+                //todo trigger callback
         } catch (Exception e){
             LogError("->[#] Failed to receive message: " + e.getMessage());
         }
@@ -271,13 +226,49 @@ public class BluetoothMngr extends Thread {
         return DELIMITER;
     }
 
-    interface connectionCallback{
+
+    interface ConnectionCallback {
         void alertStart();
         void alertConnected();
         void alertError(String error);
         void alertCancelled();
     }
 
+}
+
+class BluetoothMngrParcelable implements Parcelable{
+    private BluetoothMngr mngr;
+
+    public BluetoothMngrParcelable(BluetoothMngr mngr){
+        this.mngr = mngr;
+    }
+
+    BluetoothMngr getBluetoothMngr(){return mngr;};
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeValue(mngr);
+    }
+
+    public static final Parcelable.Creator<BluetoothMngrParcelable> CREATOR
+            = new Parcelable.Creator<BluetoothMngrParcelable>() {
+        public BluetoothMngrParcelable createFromParcel(Parcel in) {
+            return new BluetoothMngrParcelable(in);
+        }
+
+        public BluetoothMngrParcelable[] newArray(int size) {
+            return new BluetoothMngrParcelable[size];
+        }
+    };
+
+    private BluetoothMngrParcelable(Parcel in) {
+        mngr = in.readValue();
+    }
 }
 
 
