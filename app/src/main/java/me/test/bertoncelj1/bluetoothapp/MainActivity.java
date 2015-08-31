@@ -17,8 +17,10 @@ import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.lang.reflect.Method;
 
-public class MainActivity extends ActionBarActivity implements View.OnClickListener, AdapterView.OnItemClickListener, BluetoothMngr.ConnectionCallback {
+
+public class MainActivity extends ActionBarActivity implements View.OnClickListener, AdapterView.OnItemClickListener {
 
     private ListView lvSeznam;
     private TextView tvNapis;
@@ -30,11 +32,9 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
     private final String DEBUG_TAG = "infoBlue";
 
 
-    BluetoothArduino mBlue;
     BlueDevicesAdapter adapterDevices;
-    BluetoothMngr bluetoothMngr = BluetoothMngr.getInstance(this, this);
+    //BluetoothMngr bluetoothMngr = BluetoothMngr.getInstance(this, this);
 
-    int positionConnecting;
     //BlueDevicesAdapter connAdapter;
     //int sectPairedId, sectAvailableId; //id s katerimi potem lahko dostopa do svojega sectiona
     Section sectionPaired;
@@ -53,6 +53,26 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         setContentView(R.layout.activity_main);
 
         Log.d(DEBUG_TAG, "################################# START #################################");
+
+        registerRecievers();
+        initElements();
+        initList();
+
+
+        setState(States.INITIALIZING);
+        startBluetooth();
+
+    }
+    private void registerRecievers(){
+        // Register the BroadcastReceiver
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED); //for pairing
+        filter.addAction(BluetoothDevice.ACTION_FOUND);              //for searching
+        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);//for searching
+        registerReceiver(mReceiver, filter);
+        isRegisterReciever = true; //pove da je bil registriran
+    }
+    private void initElements(){
         lvSeznam = (ListView) findViewById(R.id.lvSeznam);
         bSearch = (Button) findViewById(R.id.bSearch);
         bEnableBlue = (Button) findViewById(R.id.bEnableBlue);
@@ -62,33 +82,18 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         bSearch.setOnClickListener(this);
         bEnableBlue.setOnClickListener(this);
         lvSeznam.setOnItemClickListener(this);
+    }
 
-
+    private void initList(){
         sectionPaired = new Section("Paired devices", "There are no paired devices.");
-
         sectionAvailable = new Section("Available devices", "To get new available devices, click on the search button below.");
+        sectionAvailable.setType(Types.MESSAGE);
 
         adapterDevices = new BlueDevicesAdapter(this);
         adapterDevices.addSection(sectionPaired);
         adapterDevices.addSection(sectionAvailable);
 
         lvSeznam.setAdapter(adapterDevices);
-
-        if(type == 0) {
-            //setState(States.INITIALIZING);
-            startBluetooth();
-
-            sectionAvailable.setType(Types.MESSAGE);
-            //adapterDevices.setType(Types.MESSAGE, sectAvailableId);
-        }
-
-
-        if(type == 1) {
-            mBlue = BluetoothArduino.getInstance("bc417naprava");
-
-        }
-
-
     }
 
 
@@ -96,25 +101,26 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (mBluetoothAdapter == null) {
             // Device does not support Bluetooth
-            izpisiInfo("Bluetooth not supported");
+            Log.d(DEBUG_TAG, "Bluetooth not supported");
             setState(States.NOT_SUPPORTED);
 
             return false;
         }else{
-            izpisiInfo("Bluetooth supported");
+            Log.d(DEBUG_TAG, "Bluetooth supported");
         }
 
         if (!mBluetoothAdapter.isEnabled()) {
-            izpisiInfo("Bluetooth not enabled");
+            Log.d(DEBUG_TAG, "Bluetooth not enabled");
             enableBluetooth();
             return false;
         }
 
         setState(States.ENABLED);
-        //adapterDevices.setNewList(mBluetoothAdapter.getBondedDevices(), sectPairedId);
         sectionPaired.setDeviceList(mBluetoothAdapter.getBondedDevices());
+        adapterDevices.requestRefresh();
         llBlueDevices.setVisibility(View.VISIBLE);
         bEnableBlue.setVisibility(View.GONE);
+
 
         return true;
     }
@@ -122,56 +128,9 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
 
 
 
-    @Override
-    public void alertStart() {
-        Log.d(DEBUG_TAG, "alertStart");
-        //vse ze nardi funkcija onClick
-    }
-
-    @Override
-    public void alertConnected() {
-        Log.d(DEBUG_TAG, "alertConnected");
-        adapterDevices.oneIsConnecting(false, -1);
-        adapterDevices.getItem(positionConnecting).connecting = false;
-        Toast.makeText(this, "Connection OK, oppening new Activity!", Toast.LENGTH_SHORT).show();
-        adapterDevices.oneIsConnecting(false, -1);
 
 
-        //osvezi list z paired napravami
-        sectionPaired.setDeviceList(mBluetoothAdapter.getBondedDevices());
-
-        //poklicce nov activity
-        Intent mIntent = new Intent(this, MessageActiviy.class);
-        mIntent.putExtra("blueMng", new BluetoothMngrParcelable(bluetoothMngr));
-        startActivity(mIntent);
-    }
-
-    @Override
-    public void alertCancelled() {
-        Log.d(DEBUG_TAG, "alertCancelled");
-
-        //naprava se že povezuje zato prekliče povezovanje
-        adapterDevices.oneIsConnecting(false, -1);
-        adapterDevices.getItem(positionConnecting).connecting = false;
-        adapterDevices.requestRefresh();
-        setState(States.ENABLED);
-
-    }
-
-    @Override
-    public void alertError(String error) {
-        Log.d(DEBUG_TAG, "alertError: " + error);
-
-        //naprava se že povezuje zato prekliče povezovanje
-        adapterDevices.oneIsConnecting(false, -1);
-        adapterDevices.getItem(positionConnecting).connecting = false;
-        adapterDevices.requestRefresh();
-        setState(States.ENABLED);
-
-        Toast.makeText(this, "Error connecting with " + adapterDevices.getItem(positionConnecting).blueDev.getName() , Toast.LENGTH_LONG).show();
-    }
-
-    private enum States {INITIALIZING, NOT_SUPPORTED, DISABLED, ENABLED, SEARCHING, ENABLING, CONNECTING, NOT_ENABLED}
+    private enum States {INITIALIZING, NOT_SUPPORTED, DISABLED, ENABLED, SEARCHING, ENABLING, NOT_ENABLED, PAIRING}
 
     private void setState(States stanje){
         switch (stanje){
@@ -216,9 +175,10 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
                 //tvStAvailable.setVisibility(View.GONE);
                 break;
 
-            case CONNECTING:
-                tvNapis.setText("Connecting ...");
+            case PAIRING:
+                tvNapis.setText("Pairing ...");
                 bSearch.setEnabled(false);
+
                 break;
 
         }
@@ -229,27 +189,21 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         if(mBluetoothAdapter == null) return;
 
         bSearch.setEnabled(false);
-        izpisiInfo("Searching for new devices");
+        Log.d(DEBUG_TAG, "Searching for new devices");
         if(mBluetoothAdapter.startDiscovery()){
-            izpisiInfo("discovery started ... ");
+            Log.d(DEBUG_TAG, "discovery started ... ");
         }else{
-            izpisiInfo("discovery failed !");
+            Log.d(DEBUG_TAG, "discovery failed !");
             bSearch.setEnabled(true);
             return;
         }
 
-        // Register the BroadcastReceiver
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(BluetoothDevice.ACTION_FOUND);
-        filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-        registerReceiver(mReceiver, filter);
-        isRegisterReciever = true; //pove da je bil registriran
-
         setState(States.SEARCHING);
+        adapterDevices.setDevicePairingOff();
         sectionAvailable.clearDeviceList();
         sectionAvailable.setLoading(true);
         sectionAvailable.setType(Types.EMPTY);
-        lvSeznam.setSelection(adapterDevices.getCount()-1); //scrolla na dno
+        lvSeznam.setSelection(adapterDevices.getCount() - 1); //scrolla na dno
     }
 
     void enableBluetooth(){
@@ -285,6 +239,9 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         super.onResume();
         checkBlueConnection();
         Log.d(DEBUG_TAG, "resume");
+        //refreshes list TODO check is list has changed
+        sectionPaired.setDeviceList(mBluetoothAdapter.getBondedDevices());
+        adapterDevices.requestRefresh();
     }
 
 
@@ -303,39 +260,45 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
         }
     }
 
+    private void addAvailableDevice(BluetoothDevice device){
+        //looks if device is alerady paired
+        boolean paired = false;
+        for(BluetoothDevice pairedDev : mBluetoothAdapter.getBondedDevices()){
+            if(pairedDev.equals(device)){
+                paired = true;
+                break;
+            }
+        }
+
+        if(!paired){
+            mainThreadAddDevice(device);
+            sectionAvailable.setType(Types.DEVICES);
+            mainThreadScrollToBottom();
+        }
+    }
 
     // Create a BroadcastReceiver for ACTION_FOUND
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
 
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            izpisiInfo("action :" + action);
+            Log.d(DEBUG_TAG, "action :" + action);
+
             // When discovery finds a device
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                izpisiInfo("found new one");
+                Log.d(DEBUG_TAG, "found new one");
                 // Get the BluetoothDevice object from the Intent
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 
-                boolean paired = false;
-                for(BluetoothDevice pairedDev : mBluetoothAdapter.getBondedDevices()){
-                    if(pairedDev.equals(device)){
-                        paired = true;
-                        break;
-                    }
-                }
-
-                if(!paired){
-                    mainThreadAddDevice(device);
-                    sectionAvailable.setType(Types.DEVICES);
-                    mainThreadScrollToBottom();
-                }
+                addAvailableDevice(device);
             }
+
             else if(BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)){
-                izpisiInfo("search finished");
+                Log.d(DEBUG_TAG, "search finished");
                 mainThreadScrollToBottom();
 
                 //naprava lahko prejme discovery finished takrat ko se začne povezovt
-                if(!bluetoothMngr.isConnecting()) setState(States.ENABLED);
+                setState(States.ENABLED);
 
                 if(sectionAvailable.getDevicesSize() == 0){
                     sectionAvailable.setMessage("No nearby devices found");
@@ -346,12 +309,42 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
 
                 sectionAvailable.setLoading(false);
             }
+
+            if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
+                final int state        = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR);
+                final int prevState    = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR);
+
+                if (state == BluetoothDevice.BOND_BONDED && prevState == BluetoothDevice.BOND_BONDING) {
+                    Log.d(DEBUG_TAG, "Paired");
+                    Toast.makeText(getApplicationContext(), "Paired", Toast.LENGTH_SHORT).show();
+
+                    adapterDevices.removeDevicePairing();
+
+                    //updates section paired list
+                    sectionPaired.setDeviceList(mBluetoothAdapter.getBondedDevices());
+                    adapterDevices.requestRefresh();
+                }
+
+                else if (state == BluetoothDevice.BOND_NONE && prevState == BluetoothDevice.BOND_BONDED){
+                    Log.d(DEBUG_TAG, "Unpaired");
+                }
+
+                else if (state == BluetoothDevice.BOND_NONE && prevState == BluetoothDevice.BOND_BONDING){
+                    Log.d(DEBUG_TAG, "Pairing failed");
+                    Toast.makeText(getApplicationContext(), "Pairing failed", Toast.LENGTH_SHORT).show();
+                }
+
+                if(state != BluetoothDevice.BOND_BONDING){
+                    Log.d(DEBUG_TAG, "Paired over");
+                    adapterDevices.setDevicePairingOff();
+                    mainThreadRefreshList();
+
+                }else{
+
+                }
+            }
         }
     };
-
-    private void izpisiInfo(String info){
-        Log.d(DEBUG_TAG, info);
-    }
 
 
     void mainThreadScrollToBottom(){
@@ -368,6 +361,15 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
             @Override
             public void run() {
                 sectionAvailable.addBluetoothDevice(device);
+            }
+        });
+    }
+
+    void mainThreadRefreshList(){
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                adapterDevices.requestRefresh();
             }
         });
     }
@@ -390,51 +392,81 @@ public class MainActivity extends ActionBarActivity implements View.OnClickListe
     public void onClick(View view) {
         switch(view.getId()){
             case R.id.bSearch:
-                if(type == 0) isciNaprave();
-                if(type == 1) {
-                    bSearch.setEnabled(true);
-                    bSearch.setVisibility(View.VISIBLE);
-                    mBlue.Connect();
-                }
+                isciNaprave();
                 break;
 
             case R.id.bEnableBlue:
-                if(type == 0) enableBluetooth();
-                if(type == 1){
-                    mBlue.SendMessage("Hello world  ");
-                }
+                enableBluetooth();
                 break;
         }
     }
 
+    public void pairDevice(BluetoothDevice blueDevice) {
+        try {
+            Log.d(DEBUG_TAG, "Start Pairing...");
+            if(mBluetoothAdapter.isDiscovering()) mBluetoothAdapter.cancelDiscovery();
+
+
+            Method m = blueDevice.getClass().getMethod("createBond", (Class[]) null);
+            m.invoke(blueDevice, (Object[]) null);
+
+
+
+        } catch (Exception e) {
+            Log.d(DEBUG_TAG, "Pairing failed...");
+            Log.e(DEBUG_TAG, e.getMessage());
+        }
+    }
+
+    public void unpairDevice(BluetoothDevice blueDevice) {
+        try {
+            Log.d(DEBUG_TAG, "Start unpair...");
+
+
+            Method m = blueDevice.getClass().getMethod("removeBond", (Class[]) null);
+            m.invoke(blueDevice, (Object[]) null);
+        } catch (Exception e) {
+            Log.d(DEBUG_TAG, "Unpairing failed...");
+            Log.e(DEBUG_TAG, e.getMessage());
+        }
+    }
 
     @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
 
-        //Log.d(DEBUG_TAG, "position:" + position + " itemName:" + adapterDevices.getItem(position).blueDev.getName());
+        Section sectionClicked = adapterDevices.getSection(position);
 
+        if(sectionClicked == sectionAvailable){
+            if(!adapterDevices.isDevicePairing(position)) {
+                Log.d(DEBUG_TAG, "Section available");
+                adapterDevices.setDevicePairing(true, position);
+                setState(States.PAIRING);
+                mainThreadRefreshList();
 
-        //pogleda če se kdo že povezuje
-        if (!adapterDevices.oneIsConnecting) {
-
-            Log.d(DEBUG_TAG, "start connecting click");
-            if(mBluetoothAdapter.isDiscovering()) mBluetoothAdapter.cancelDiscovery();
-            adapterDevices.oneIsConnecting(true, position);
-            adapterDevices.getItem(position).connecting = true;
-            adapterDevices.requestRefresh();
-            setState(States.CONNECTING);
-            positionConnecting = position;
-
-            bluetoothMngr.Connect(adapterDevices.getItem(position).blueDev);
-            //vse ostale stvari uredi alertStart
-
-        }else{
-            Log.d(DEBUG_TAG, "stop connecting click");
-            //naprava se že povezuje zato samo oprekliče povezovanje
-            bluetoothMngr.stopConnecting();
-            //vse ostale stvari uredi alertCancelled
+                pairDevice(adapterDevices.getItem(position).blueDev);
+            }
         }
 
+        else if(sectionClicked == sectionPaired){
+            Log.d(DEBUG_TAG, "Section paired");
+            BluetoothDevice device = adapterDevices.getItem(position).blueDev;
+
+            if(device != null) {
+                //calls new activity
+                Intent mIntent = new Intent(this, MessageActiviy.class);
+                mIntent.putExtra("blueDeviceName", device.getName());
+                mIntent.putExtra("blueDeviceAddress", device.getAddress());
+                startActivity(mIntent);
+            }
+        }
+
+        else{
+            Log.w(DEBUG_TAG, "Unknown section");
+        }
+
+
     }
+
+
 
 }

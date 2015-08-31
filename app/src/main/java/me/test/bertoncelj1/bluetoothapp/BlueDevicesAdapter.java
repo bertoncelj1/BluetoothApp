@@ -2,6 +2,7 @@ package me.test.bertoncelj1.bluetoothapp;
 
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -18,11 +19,10 @@ import java.util.Set;
  */
 class BlueDevicesAdapter extends BaseAdapter implements ParentList {
     private final Context context;
-    boolean oneIsConnecting = false;
-    int connectingPosition;
-    //private boolean oneIsConnecting = false;
 
     private List<Section> sections;
+
+    private int devicePairingPosition = -1;
 
     //CONSTRUCTORS
     public BlueDevicesAdapter(Context context, List<Section> sections){
@@ -58,26 +58,70 @@ class BlueDevicesAdapter extends BaseAdapter implements ParentList {
             size +=  section.getSize();
 
         }
-
         return size;
     }
 
+    //returns section for given position
+    public Section getSection(int position){
+        for(Section section : sections) {
+            int sectionSize = section.getSize();
 
-    //nastavi kateri se povezuje
-    public void oneIsConnecting(boolean state, int postion){
-        oneIsConnecting = state;
-        connectingPosition = postion;
+            if (position < sectionSize) return section;
+
+            position -= sectionSize;
+        }
+        return null;
     }
 
-/*
-    public void setConnectingItem(int position, boolean connection, int sectionNumber){
-        if(oneIsConnecting)return;
-        oneIsConnecting = true;
-        sections.get(sectionNumber).set(position).setConnecting(connection);
-        notifyDataSetChanged();
+    public void setDevicePairing(boolean state, int position){
+        devicePairingPosition = position;
+
+        for(Section section : sections) {
+            int sectionSize = section.getSize();
+
+            if (position < sectionSize) section.setDevicePairing(state, position - 1);//-1 zaradi headerja
+
+            position -= sectionSize;
+        }
     }
 
-*/
+    //removes pairing device
+    public void removeDevicePairing(){
+        int position = devicePairingPosition;
+        ListItemDevice device = null;
+
+        setDevicePairingOff();//because device is removed, it is unreasonable for it to be in pairing state
+
+        for(Section section : sections) {
+            int sectionSize = section.getSize();
+
+            if (position < sectionSize) {
+                section.removeDevice(position - 1);//removes device from old section
+                return;
+            }
+            position -= sectionSize;
+        }
+
+    }
+
+    public void setDevicePairingOff(){
+        if(devicePairingPosition > 0) {
+            setDevicePairing(false, devicePairingPosition);
+            devicePairingPosition = -1;
+        }
+    }
+
+    public boolean isDevicePairing(int position){
+        for(Section section : sections) {
+            int sectionSize = section.getSize();
+
+            if (position < sectionSize) return section.isDevicePairing(position - 1);//-1 zaradi headerja
+
+            position -= sectionSize;
+        }
+
+        return false;
+    }
 
     @Override
     public boolean areAllItemsEnabled() {
@@ -86,12 +130,8 @@ class BlueDevicesAdapter extends BaseAdapter implements ParentList {
 
     @Override
     public boolean isEnabled(int position){
-        //če se kakšna parava povezuje lahko kliknemo samo tisto napravo
-        if(oneIsConnecting){
-            return (position == connectingPosition);
-        }
+        if(devicePairingPosition > 0)return false;
 
-        //če se ne noben ne povezuje so vsi omogočeni
         for(Section section : sections){
             int sectionSize = section.getSize();
 
@@ -119,11 +159,6 @@ class BlueDevicesAdapter extends BaseAdapter implements ParentList {
         return null;
     }
 
-    /*
-    public boolean getItemConnecting(int position){
-        return getItem(position).connecting;
-    }
-    */
 
     @Override
     public long getItemId(int position) {
@@ -179,7 +214,6 @@ class Section{
     public Section(String headerNaslov, String message){
         this.headerNaslov = headerNaslov;
         this.message = message;
-
     }
 
     public void setType(Types type){
@@ -259,11 +293,11 @@ class Section{
             String adressString;
 
 
-            if(device.connecting){
+            if(device.pairing){
                 pb.setVisibility(View.VISIBLE);
                 ime.setEnabled(false);
                 adress.setEnabled(false);
-                adressString = "connecting ...";
+                adressString = "pairing ...";
             }else{
                 pb.setVisibility(View.GONE);
                 ime.setEnabled(true);
@@ -293,7 +327,7 @@ class Section{
 
 
     public ListItemDevice getDevice(int position){
-        if(position < 0)throw new IndexOutOfBoundsException("position is < 0");
+        if(position < 0)throw new IndexOutOfBoundsException("position is " + position + " < 0");
 
         return devices.get(position);
     }
@@ -316,7 +350,6 @@ class Section{
         }
 
         setType(Types.DEVICES);
-        requestParentRefresh();
     }
 
 
@@ -341,6 +374,12 @@ class Section{
         headerStevilo = devices.size();
     }
 
+    public void removeDevice(int position){
+        devices.remove(position);
+        headerStevilo = devices.size();
+        requestParentRefresh();
+    }
+
     private void clearDevices(){
         devices.clear();
         headerStevilo = 0;
@@ -358,7 +397,7 @@ class Section{
         headerNaslov = naslov;
     }
 
-    public void setConnecting(boolean set, int position) {devices.get(position).connecting = set;}
+    public void setPairing(boolean set, int position) {devices.get(position).pairing = set;}
 
     public boolean isEnabled(int position) {
         //is header enabled ?
@@ -371,13 +410,20 @@ class Section{
             return false;
         }
 
-        //ii device enabled
-
+        //is device enabled
         if(position > 0 && type == Types.DEVICES){
             return true;
         }
 
         return false;
+    }
+
+    public void setDevicePairing(boolean state, int position) {
+        getDevice(position).pairing = state;
+    }
+
+    public boolean isDevicePairing(int position) {
+        return getDevice(position).pairing;
     }
 }
 
@@ -385,14 +431,14 @@ class Section{
 class ListItemDevice{
     BluetoothDevice blueDev;
     boolean approved = false; // pove če je ta naprava ta prava .. če je dejansko bluetooth module
-    boolean connecting = false;
+    boolean pairing = false;
 
     private ListItemDevice(BluetoothDevice blueDev, boolean approved){
         this.approved = approved;
         this.blueDev = blueDev;
     }
 
-    public ListItemDevice(BluetoothDevice blueDev){
+    public ListItemDevice(BluetoothDevice blueDev) {
         this(blueDev, isBC417Device(blueDev));
     }
 
